@@ -1,3 +1,4 @@
+from http.server import BaseHTTPRequestHandler
 import json
 import os
 import re
@@ -141,98 +142,82 @@ def generate_notes_with_gemini(transcript_text):
         raise Exception("GEMINI_API_KEY가 설정되어 있지 않습니다. 환경 변수를 확인하세요.")
 
     try:
-        # Gemini 2.0 Flash 모델 사용 (사용자 요청에 따라 변경)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        # Gemini 1.5 Flash 모델 사용 (안정적인 모델로 변경)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         raise Exception(f"AI 모델 호출 중 오류가 발생했습니다: {str(e)}")
 
-# Vercel 서버리스 함수 핸들러
-def handler(request):
-    # CORS 헤더 설정
-    headers = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Content-Type": "application/json"
-    }
-    
-    # HTTP 메서드 확인
-    method = request.get("method", "")
-    
-    # OPTIONS 요청 처리 (CORS 프리플라이트)
-    if method == "OPTIONS":
-        return {
-            "statusCode": 200,
-            "headers": headers,
-            "body": ""
-        }
-    
-    # POST 메서드가 아닌 경우
-    if method != "POST":
-        return {
-            "statusCode": 405,
-            "headers": headers,
-            "body": json.dumps({"error": "Method Not Allowed"})
-        }
-    
-    try:
-        # 요청 본문 파싱
-        body = json.loads(request.get("body", "{}"))
-        
-        # 요청 데이터 검증
-        if not body or 'inputType' not in body or 'inputValue' not in body:
-            return {
-                "statusCode": 400,
-                "headers": headers,
-                "body": json.dumps({"error": "유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다."})
-            }
-        
-        input_type = body['inputType']
-        input_value = body['inputValue']
-        
-        # 입력 타입에 따라 처리
-        transcript_text = ""
-        video_title = "유튜브_학습"
-        
-        if input_type == 'url':
-            # URL에서 비디오 ID 추출
-            video_id = extract_video_id(input_value)
-            if not video_id:
-                return {
-                    "statusCode": 400,
-                    "headers": headers,
-                    "body": json.dumps({"error": "유효한 유튜브 URL이 아닙니다."})
-                }
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            request_data = json.loads(post_data)
             
-            # 비디오 제목 가져오기
-            video_title = get_video_title(video_id)
+            # 요청 데이터 검증
+            if 'inputType' not in request_data or 'inputValue' not in request_data:
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "유효하지 않은 요청입니다."}).encode('utf-8'))
+                return
             
-            # 유튜브 자막 가져오기
-            transcript_text = get_youtube_transcript(video_id)
-        else:  # input_type == 'text'
-            # 사용자가 직접 입력한 스크립트 사용
-            transcript_text = input_value
-        
-        # 학습 노트 생성
-        markdown_content = generate_notes_with_gemini(transcript_text)
-        
-        # 성공 응답
-        return {
-            "statusCode": 200,
-            "headers": headers,
-            "body": json.dumps({
+            input_type = request_data['inputType']
+            input_value = request_data['inputValue']
+            
+            # 입력 타입에 따라 처리
+            transcript_text = ""
+            video_title = "유튜브_학습"
+            
+            if input_type == 'url':
+                # URL에서 비디오 ID 추출
+                video_id = extract_video_id(input_value)
+                if not video_id:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "유효한 유튜브 URL이 아닙니다."}).encode('utf-8'))
+                    return
+                
+                # 비디오 제목 가져오기
+                video_title = get_video_title(video_id)
+                
+                # 유튜브 자막 가져오기
+                transcript_text = get_youtube_transcript(video_id)
+            else:  # input_type == 'text'
+                # 사용자가 직접 입력한 스크립트 사용
+                transcript_text = input_value
+            
+            # 학습 노트 생성
+            markdown_content = generate_notes_with_gemini(transcript_text)
+            
+            # 성공 응답
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            response_data = {
                 "markdownContent": markdown_content,
                 "videoTitle": video_title
-            })
-        }
-        
-    except Exception as e:
-        # 오류 응답
-        error_message = str(e)
-        return {
-            "statusCode": 400,
-            "headers": headers,
-            "body": json.dumps({"error": error_message})
-        }
+            }
+            
+            self.wfile.write(json.dumps(response_data).encode('utf-8'))
+            
+        except Exception as e:
+            self.send_response(400)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+    
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
