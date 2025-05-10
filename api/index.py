@@ -142,8 +142,8 @@ def generate_notes_with_gemini(transcript_text):
         raise Exception("GEMINI_API_KEY가 설정되어 있지 않습니다. 환경 변수를 확인하세요.")
 
     try:
-        # Gemini 1.5 Flash 모델 사용 (안정적인 모델로 변경)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Gemini 2.0 Flash 모델 사용 (사용자 요청에 따라)
+        model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
