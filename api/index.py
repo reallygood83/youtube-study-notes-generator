@@ -1,4 +1,4 @@
-from http.server import BaseHTTPRequestHandler
+from flask import Flask, request, jsonify
 import json
 import os
 import re
@@ -15,8 +15,7 @@ if GEMINI_API_KEY:
 
 # 디버깅을 위한 로그 함수
 def log_message(message):
-    with open("/tmp/api_log.txt", "a") as f:
-        f.write(f"{message}\n")
+    print(message)  # Vercel 로그에 출력
 
 # 유튜브 비디오 ID 추출 함수
 def extract_video_id(url):
@@ -101,7 +100,7 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
 제목: {video_info.get('title', '알 수 없는 제목')}
 비디오 ID: {video_info.get('video_id', '알 수 없는 ID')}
 """
-
+        
     # 학습 레벨 설정
     level_context = ""
     if learning_level == 'advanced':
@@ -123,7 +122,7 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
     
     prompt = f"""# 유튜브 대본 티칭 머신
 
-## 역할: 적응형 교육 합성기
+## 역할: 적응형 교육 합성기  
 귀하는 YouTube 원본 스크립트를 최적화된 학습 자료로 변환하는 전문 교육 콘텐츠 처리 전문가입니다. 고급 교육 프레임워크를 활용합니다.
 
 {video_context}
@@ -264,103 +263,7 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
         log_message(f"노트 생성 중 오류: {str(e)}")
         raise Exception(f"학습 노트 생성 중 오류가 발생했습니다: {str(e)}")
 
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        try:
-            # 로그 기록
-            log_message("POST 요청 받음")
-            
-            # 요청 데이터 읽기
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length).decode('utf-8')
-            
-            # 로그 기록
-            log_message(f"요청 데이터 길이: {len(post_data)}")
-            
-            request_data = json.loads(post_data)
+# Flask 앱 설정
+app = Flask(__name__)
 
-            # 요청 데이터 검증
-            if 'inputType' not in request_data or 'inputValue' not in request_data:
-                self.send_error_response("유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다.")
-                return
-
-            input_type = request_data['inputType']
-            input_value = request_data['inputValue']
-            learning_level = request_data.get('learningLevel', 'beginner')
-            
-            # 로그 기록
-            log_message(f"입력 타입: {input_type}, 입력 값 길이: {len(input_value)}")
-            
-            # 입력 타입에 따라 처리
-            transcript_text = ""
-            video_title = "유튜브_학습"
-            video_info = None
-            
-            if input_type == 'url':
-                # URL에서 비디오 ID 추출
-                video_id = extract_video_id(input_value)
-                if not video_id:
-                    self.send_error_response("유효한 유튜브 URL이 아닙니다.")
-                    return
-                
-                # 비디오 정보 가져오기
-                video_info = get_video_info(video_id)
-                video_title = video_info.get('title', f"Video_{video_id}")
-                
-                try:
-                    # 유튜브 자막 가져오기 시도
-                    transcript_text = get_youtube_transcript(video_id)
-                except Exception as e:
-                    # 자막 가져오기 실패 시 사용자 친화적 오류 메시지
-                    self.send_error_response(str(e))
-                    return
-            else:  # input_type == 'text'
-                # 사용자가 직접 입력한 스크립트 사용
-                transcript_text = input_value
-            
-            # 학습 노트 생성
-            markdown_content = generate_notes_with_gemini(transcript_text, video_info, learning_level)
-            
-            # 성공 응답
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-            self.end_headers()
-            
-            response_data = {
-                "markdownContent": markdown_content,
-                "videoTitle": video_title
-            }
-            
-            response_json = json.dumps(response_data)
-            log_message(f"응답 데이터 길이: {len(response_json)}")
-            
-            self.wfile.write(response_json.encode('utf-8'))
-            
-        except Exception as e:
-            log_message(f"오류 발생: {str(e)}")
-            self.send_error_response(str(e))
-    
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-    
-    def send_error_response(self, error_message):
-        self.send_response(400)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-        
-        response_data = {
-            "error": error_message
-        }
-        
-        log_message(f"오류 응답: {error_message}")
-        self.wfile.write(json.dumps(response_data).encode('utf-8'))
+# API 엔드포인트는 api.py에 정의되어 있음
