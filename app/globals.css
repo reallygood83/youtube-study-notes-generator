@@ -7,6 +7,11 @@
   --background-rgb: 240, 240, 240;
 }
 
+.dark {
+  --foreground-rgb: 255, 255, 255;
+  --background-rgb: 17, 24, 39;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
@@ -31,6 +36,14 @@ h2 {
   @apply bg-white p-6 rounded-lg shadow-md my-4;
 }
 
+.dark .card {
+  @apply bg-gray-900 text-gray-100;
+}
+
+.dark-card {
+  @apply bg-gray-900 text-gray-100;
+}
+
 .btn {
   @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
 }
@@ -45,4 +58,26 @@ h2 {
 
 .input {
   @apply w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+
+.dark .input {
+  @apply bg-gray-800 border-gray-700 text-gray-100;
+}
+
+/* 다크 모드에서 스크롤바 스타일 */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  @apply bg-gray-800;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded-full;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500;
 }

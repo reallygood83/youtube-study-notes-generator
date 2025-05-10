@@ -9,7 +9,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="ko">
       <body>
-        <main className="min-h-screen bg-gray-100">
+        <main className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200">
           {children}
         </main>
       </body>
