@@ -1,9 +1,11 @@
-from http.server import BaseHTTPRequestHandler
+from flask import Flask, request, jsonify, Response
 import json
 import os
 import re
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi, _errors as yt_errors
+
+app = Flask(__name__)
 
 # 환경 변수에서 API 키 가져오기
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -148,109 +150,29 @@ def generate_notes_with_gemini(transcript_text):
     except Exception as e:
         raise Exception(f"AI 모델 호출 중 오류가 발생했습니다: {str(e)}")
 
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        # CORS 헤더 설정
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        
-        try:
-            # 요청 본문 읽기
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length).decode('utf-8')
-            request_data = json.loads(post_data)
-            
-            # 요청 데이터 검증
-            if not request_data or 'inputType' not in request_data or 'inputValue' not in request_data:
-                raise ValueError("유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다.")
-            
-            input_type = request_data['inputType']
-            input_value = request_data['inputValue']
-            
-            # 입력 타입에 따라 처리
-            transcript_text = ""
-            video_title = "유튜브_학습"
-            
-            if input_type == 'url':
-                # URL에서 비디오 ID 추출
-                video_id = extract_video_id(input_value)
-                if not video_id:
-                    raise ValueError("유효한 유튜브 URL이 아닙니다.")
-                
-                # 비디오 제목 가져오기
-                video_title = get_video_title(video_id)
-                
-                # 유튜브 자막 가져오기
-                transcript_text = get_youtube_transcript(video_id)
-            else:  # input_type == 'text'
-                # 사용자가 직접 입력한 스크립트 사용
-                transcript_text = input_value
-            
-            # 학습 노트 생성
-            markdown_content = generate_notes_with_gemini(transcript_text)
-            
-            # 성공 응답
-            response_data = {
-                "markdownContent": markdown_content,
-                "videoTitle": video_title
-            }
-            
-            self.wfile.write(json.dumps(response_data).encode('utf-8'))
-            
-        except Exception as e:
-            # 오류 응답
-            error_message = str(e)
-            response_data = {
-                "error": error_message
-            }
-            
-            self.wfile.write(json.dumps(response_data).encode('utf-8'))
-
-    def do_OPTIONS(self):
-        # CORS 프리플라이트 요청 처리
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.send_header('Access-Control-Max-Age', '86400')
-        self.end_headers()
-
-def handler(request, response):
+@app.route('/', methods=['POST', 'OPTIONS'])
+def api_handler():
+    # CORS 헤더 설정
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    }
+    
+    # OPTIONS 요청 처리 (CORS 프리플라이트)
     if request.method == 'OPTIONS':
-        # CORS 프리플라이트 요청 처리
-        response.status = 200
-        response.headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Content-Type': 'application/json'
-        }
-        return response
-
-    if request.method != 'POST':
-        # POST 요청이 아닌 경우 405 Method Not Allowed 반환
-        response.status = 405
-        response.headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
-        }
-        response.body = json.dumps({"error": "Method Not Allowed"})
-        return response
-
+        return '', 200, headers
+    
     try:
-        # 요청 본문 파싱
-        request_data = json.loads(request.body)
+        # 요청 데이터 받기
+        data = request.json
         
         # 요청 데이터 검증
-        if not request_data or 'inputType' not in request_data or 'inputValue' not in request_data:
-            raise ValueError("유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다.")
+        if not data or 'inputType' not in data or 'inputValue' not in data:
+            return jsonify({'error': '유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다.'}), 400, headers
         
-        input_type = request_data['inputType']
-        input_value = request_data['inputValue']
+        input_type = data['inputType']
+        input_value = data['inputValue']
         
         # 입력 타입에 따라 처리
         transcript_text = ""
@@ -260,7 +182,7 @@ def handler(request, response):
             # URL에서 비디오 ID 추출
             video_id = extract_video_id(input_value)
             if not video_id:
-                raise ValueError("유효한 유튜브 URL이 아닙니다.")
+                return jsonify({'error': '유효한 유튜브 URL이 아닙니다.'}), 400, headers
             
             # 비디오 제목 가져오기
             video_title = get_video_title(video_id)
@@ -275,25 +197,45 @@ def handler(request, response):
         markdown_content = generate_notes_with_gemini(transcript_text)
         
         # 성공 응답
-        response.status = 200
-        response.headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
+        response_data = {
+            'markdownContent': markdown_content,
+            'videoTitle': video_title
         }
-        response.body = json.dumps({
-            "markdownContent": markdown_content,
-            "videoTitle": video_title
-        })
+        
+        response = Response(
+            response=json.dumps(response_data),
+            status=200,
+            mimetype='application/json'
+        )
+        
+        # CORS 헤더 추가
+        for key, value in headers.items():
+            response.headers[key] = value
+        
+        return response
         
     except Exception as e:
         # 오류 응답
-        response.status = 400
-        response.headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
+        response_data = {
+            'error': str(e)
         }
-        response.body = json.dumps({
-            "error": str(e)
-        })
-    
-    return response
+        
+        response = Response(
+            response=json.dumps(response_data),
+            status=400,
+            mimetype='application/json'
+        )
+        
+        # CORS 헤더 추가
+        for key, value in headers.items():
+            response.headers[key] = value
+        
+        return response
+
+# Vercel 서버리스 함수 진입점
+def handler(req):
+    return app(req.environ, lambda status, headers, exc_info=None: [status, headers, []])
+
+# Flask 앱이 직접 실행될 때의 설정
+if __name__ == '__main__':
+    app.run(debug=True)
