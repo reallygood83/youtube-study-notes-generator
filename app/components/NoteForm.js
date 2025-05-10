@@ -133,12 +133,22 @@ export default function NoteForm() {
     } catch (error) {
       // 오류 처리
       console.error('노트 생성 실패:', error);
-      
+
+      // API 응답에서 오류 정보 추출
+      const errorResponse = error.response?.data || {};
+      const errorMessage = errorResponse.error || '노트 생성에 실패했습니다. 잠시 후 다시 시도해주세요.';
+      const errorType = errorResponse.errorType || 'UNKNOWN_ERROR';
+      const recommendationText = errorResponse.recommendationText || '';
+      const helpText = errorResponse.helpText || '';
+
       setResult({
         success: false,
         markdownContent: '',
         videoTitle: '',
-        error: error.response?.data?.error || '노트 생성에 실패했습니다. 잠시 후 다시 시도해주세요.'
+        error: errorMessage,
+        errorType: errorType,
+        recommendationText: recommendationText,
+        helpText: helpText
       });
     } finally {
       // 로딩 상태 종료
@@ -327,11 +337,38 @@ export default function NoteForm() {
         </div>
       )}
 
-      {/* 결과 표시 */}
+      {/* 오류 표시 */}
       {!isLoading && result.error && (
         <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md">
           <p className="font-medium">오류 발생</p>
           <p>{result.error}</p>
+
+          {/* 추천 해결책 표시 */}
+          {result.recommendationText && (
+            <div className="mt-2 text-sm">
+              <p className="font-medium">권장 해결 방법:</p>
+              <p>{result.recommendationText}</p>
+            </div>
+          )}
+
+          {/* 도움말 텍스트 표시 */}
+          {result.helpText && (
+            <div className="mt-2 text-sm italic">
+              <p>{result.helpText}</p>
+            </div>
+          )}
+
+          {/* 자막 문제인 경우 입력 모드 전환 버튼 표시 */}
+          {(result.errorType === 'TRANSCRIPTS_DISABLED' ||
+            result.errorType === 'NO_TRANSCRIPT' ||
+            result.errorType === 'TRANSCRIPT_ERROR') && (
+            <button
+              onClick={() => setInputType(INPUT_TYPES.TEXT)}
+              className="mt-3 bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1 rounded-md text-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              스크립트 직접 입력 모드로 전환
+            </button>
+          )}
         </div>
       )}
 
