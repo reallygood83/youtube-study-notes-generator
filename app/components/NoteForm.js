@@ -368,17 +368,38 @@ export default function NoteForm() {
             </div>
           )}
 
-          {/* 자막 문제인 경우 입력 모드 전환 버튼 표시 */}
-          {(result.errorType === 'TRANSCRIPTS_DISABLED' ||
-            result.errorType === 'NO_TRANSCRIPT' ||
-            result.errorType === 'TRANSCRIPT_ERROR') && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {/* 자막 문제인 경우 입력 모드 전환 버튼 표시 */}
+            {(result.errorType === 'TRANSCRIPTS_DISABLED' ||
+              result.errorType === 'NO_TRANSCRIPT' ||
+              result.errorType === 'TRANSCRIPT_ERROR') && (
+              <button
+                onClick={() => setInputType(INPUT_TYPES.TEXT)}
+                className="bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1 rounded-md text-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                스크립트 직접 입력 모드로 전환
+              </button>
+            )}
+            
+            {/* 새로고침 버튼 */}
             <button
-              onClick={() => setInputType(INPUT_TYPES.TEXT)}
-              className="mt-3 bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1 rounded-md text-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+              onClick={() => {
+                // 결과 초기화
+                setResult({
+                  success: false,
+                  markdownContent: '',
+                  videoTitle: '',
+                  error: null
+                });
+              }}
+              className="bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 px-3 py-1 rounded-md text-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center"
             >
-              스크립트 직접 입력 모드로 전환
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+              </svg>
+              다시 시도
             </button>
-          )}
+          </div>
         </div>
       )}
 
@@ -425,8 +446,30 @@ export default function NoteForm() {
               </svg>
               공유하기
             </button>
+            
+            <button
+              onClick={() => {
+                // 결과 초기화
+                setResult({
+                  success: false,
+                  markdownContent: '',
+                  videoTitle: '',
+                  error: null
+                });
+                // 입력값도 선택적으로 초기화
+                if (window.confirm('입력된 내용도 초기화할까요?')) {
+                  setInputValue('');
+                }
+              }}
+              className="btn btn-primary px-4 py-2 flex items-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+              </svg>
+              새 노트 작성
+            </button>
           </div>
-
+          
           {/* 미리보기 */}
           <div className="mt-4">
             <h3 className="text-lg font-medium mb-2 dark:text-gray-200">노트 미리보기:</h3>
