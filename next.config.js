@@ -1,8 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Python API와 연동 설정
+  // API 설정
   rewrites: async () => {
     return [
+      {
+        source: '/api',
+        destination: '/api/index.py',
+      },
       {
         source: '/api/:path*',
         destination: '/api/:path*',

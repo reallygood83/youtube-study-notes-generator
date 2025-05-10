@@ -110,6 +110,10 @@ export default function NoteForm() {
         inputType,
         inputValue,
         learningLevel
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
       
       // 결과 처리

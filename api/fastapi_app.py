@@ -1,10 +1,25 @@
-from http.server import BaseHTTPRequestHandler
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import json
 import os
 import re
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi, _errors as yt_errors
 import requests
+from pydantic import BaseModel
+from typing import Optional
+
+app = FastAPI()
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 환경 변수에서 API 키 가져오기
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -17,6 +32,12 @@ if GEMINI_API_KEY:
 def log_message(message):
     with open("/tmp/api_log.txt", "a") as f:
         f.write(f"{message}\n")
+
+# 요청 모델 정의
+class NoteRequest(BaseModel):
+    inputType: str
+    inputValue: str
+    learningLevel: Optional[str] = "beginner"
 
 # 유튜브 비디오 ID 추출 함수
 def extract_video_id(url):
@@ -72,16 +93,16 @@ def get_youtube_transcript(video_id):
         return transcript_text
     except yt_errors.NoTranscriptAvailable:
         log_message("자막이 제공되지 않는 비디오")
-        raise Exception("이 영상에는 자막이 제공되지 않습니다. 스크립트 직접 입력 방식을 이용해주세요.")
+        raise HTTPException(status_code=400, detail="이 영상에는 자막이 제공되지 않습니다. 스크립트 직접 입력 방식을 이용해주세요.")
     except yt_errors.TranscriptsDisabled:
         log_message("자막이 비활성화된 비디오")
-        raise Exception("이 영상의 자막이 비활성화되어 있습니다. 스크립트 직접 입력 방식을 이용해주세요.")
+        raise HTTPException(status_code=400, detail="이 영상의 자막이 비활성화되어 있습니다. 스크립트 직접 입력 방식을 이용해주세요.")
     except yt_errors.VideoUnavailable:
         log_message("접근할 수 없는 비디오")
-        raise Exception("유효하지 않거나 접근할 수 없는 영상입니다.")
+        raise HTTPException(status_code=400, detail="유효하지 않거나 접근할 수 없는 영상입니다.")
     except Exception as e:
         log_message(f"자막 가져오기 중 오류: {str(e)}")
-        raise Exception(f"자막을 가져오는 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"자막을 가져오는 중 오류가 발생했습니다: {str(e)}")
 
 # Gemini API를 사용하여 학습 노트 생성 함수
 def generate_notes_with_gemini(transcript_text, video_info=None, learning_level='beginner'):
@@ -101,7 +122,7 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
 제목: {video_info.get('title', '알 수 없는 제목')}
 비디오 ID: {video_info.get('video_id', '알 수 없는 ID')}
 """
-        
+
     # 학습 레벨 설정
     level_context = ""
     if learning_level == 'advanced':
@@ -123,7 +144,7 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
     
     prompt = f"""# 유튜브 대본 티칭 머신
 
-## 역할: 적응형 교육 합성기  
+## 역할: 적응형 교육 합성기
 귀하는 YouTube 원본 스크립트를 최적화된 학습 자료로 변환하는 전문 교육 콘텐츠 처리 전문가입니다. 고급 교육 프레임워크를 활용합니다.
 
 {video_context}
@@ -221,7 +242,7 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
 
     if not GEMINI_API_KEY:
         log_message("API 키 없음")
-        raise Exception("GEMINI_API_KEY가 설정되어 있지 않습니다. 환경 변수를 확인하세요.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY가 설정되어 있지 않습니다. 환경 변수를 확인하세요.")
 
     try:
         # API 키가 있을 때만 실제 Gemini API 호출
@@ -262,87 +283,61 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
 """
     except Exception as e:
         log_message(f"노트 생성 중 오류: {str(e)}")
-        raise Exception(f"학습 노트 생성 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"학습 노트 생성 중 오류가 발생했습니다: {str(e)}")
 
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        log_message(f"POST 요청 받음: {self.path}")
-        try:
-            # 요청 데이터 읽기
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length).decode('utf-8')
-            data = json.loads(post_data)
-            
-            # 요청 데이터 검증
-            if not data or 'inputType' not in data or 'inputValue' not in data:
-                self.send_error_response('유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다.')
-                return
-            
-            input_type = data['inputType']
-            input_value = data['inputValue']
-            learning_level = data.get('learningLevel', 'beginner')
-            
-            # 입력 타입에 따라 처리
-            transcript_text = ""
-            video_title = "유튜브_학습"
-            
-            if input_type == 'url':
-                # URL에서 비디오 ID 추출
-                video_id = extract_video_id(input_value)
-                if not video_id:
-                    self.send_error_response('유효한 유튜브 URL이 아닙니다.')
-                    return
-                
-                # 비디오 정보 가져오기
-                video_info = get_video_info(video_id)
-                video_title = video_info.get('title', f"Video_{video_id}")
-                
-                # 유튜브 자막 가져오기
-                transcript_text = get_youtube_transcript(video_id)
-                
-                # 학습 노트 생성
-                markdown_content = generate_notes_with_gemini(transcript_text, video_info, learning_level)
-            else:  # input_type == 'text'
-                # 사용자가 직접 입력한 스크립트 사용
-                transcript_text = input_value
-                
-                # 학습 노트 생성
-                markdown_content = generate_notes_with_gemini(transcript_text, None, learning_level)
-            
-            # 성공 응답
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-            self.end_headers()
-            
-            response = json.dumps({
-                'markdownContent': markdown_content,
-                'videoTitle': video_title
-            })
-            self.wfile.write(response.encode('utf-8'))
-            
-        except Exception as e:
-            log_message(f"처리 중 오류 발생: {str(e)}")
-            self.send_error_response(str(e))
-    
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-    
-    def send_error_response(self, error_message):
-        self.send_response(400)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+@app.post("/api")
+async def generate_notes(request: NoteRequest):
+    try:
+        input_type = request.inputType
+        input_value = request.inputValue
+        learning_level = request.learningLevel
         
-        response = json.dumps({
-            'error': error_message
-        })
-        self.wfile.write(response.encode('utf-8'))
+        # 입력 타입에 따라 처리
+        transcript_text = ""
+        video_title = "유튜브_학습"
+        
+        if input_type == 'url':
+            # URL에서 비디오 ID 추출
+            video_id = extract_video_id(input_value)
+            if not video_id:
+                raise HTTPException(status_code=400, detail="유효한 유튜브 URL이 아닙니다.")
+            
+            # 비디오 정보 가져오기
+            video_info = get_video_info(video_id)
+            video_title = video_info.get('title', f"Video_{video_id}")
+            
+            # 유튜브 자막 가져오기
+            transcript_text = get_youtube_transcript(video_id)
+            
+            # 학습 노트 생성
+            markdown_content = generate_notes_with_gemini(transcript_text, video_info, learning_level)
+        else:  # input_type == 'text'
+            # 사용자가 직접 입력한 스크립트 사용
+            transcript_text = input_value
+            
+            # 학습 노트 생성
+            markdown_content = generate_notes_with_gemini(transcript_text, None, learning_level)
+        
+        # 성공 응답
+        return {
+            "markdownContent": markdown_content,
+            "videoTitle": video_title
+        }
+    except HTTPException as e:
+        # FastAPI HTTP 예외
+        raise e
+    except Exception as e:
+        log_message(f"처리 중 오류 발생: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail={
+                "error": str(e),
+                "errorType": "API_ERROR",
+                "recommendationText": "잠시 후 다시 시도하거나, 다른 유튜브 URL을 사용해보세요.",
+                "helpText": "자막이 없는 영상인 경우, 스크립트 직접 입력 방식을 이용해보세요."
+            }
+        )
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "message": "API is running"} 

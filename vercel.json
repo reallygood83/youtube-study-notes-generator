@@ -1,11 +1,12 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/index.py", "use": "@vercel/python" },
+    { "src": "api/fastapi_app.py", "use": "@vercel/python" },
     { "src": "package.json", "use": "@vercel/next" }
   ],
   "routes": [
-    { "src": "/api", "dest": "/api", "methods": ["POST", "OPTIONS"] },
+    { "src": "/api", "dest": "api/fastapi_app.py", "methods": ["POST", "OPTIONS"] },
+    { "src": "/api/(.*)", "dest": "api/fastapi_app.py", "methods": ["GET", "POST", "OPTIONS"] },
     { "src": "/(.*)", "dest": "/$1" }
   ],
   "env": {

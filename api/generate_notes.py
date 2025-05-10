@@ -14,42 +14,102 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# 디버깅을 위한 로그 함수
+def log_message(message):
+    with open("/tmp/api_log.txt", "a") as f:
+        f.write(f"{message}\n")
+
 # 유튜브 비디오 ID 추출 함수
 def extract_video_id(url):
     """유튜브 URL에서 비디오 ID를 추출합니다."""
+    log_message(f"URL 분석 시작: {url}")
     video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', url)
     if video_id_match:
-        return video_id_match.group(1)
+        video_id = video_id_match.group(1)
+        log_message(f"비디오 ID 추출 성공: {video_id}")
+        return video_id
+    log_message("비디오 ID 추출 실패")
     return None
 
 # 유튜브 비디오 제목 가져오기 함수
 def get_video_title(video_id):
     """유튜브 비디오 ID로부터 제목을 가져옵니다."""
-    return f"Video_{video_id}"
+    try:
+        # YouTube Data API를 사용하려면 API 키가 필요하지만, 
+        # 여기서는 간단하게 OEmbed API를 사용하여 제목을 가져오겠습니다.
+        import requests
+        url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            data = response.json()
+            title = data.get('title', f"Video_{video_id}")
+            log_message(f"비디오 제목: {title}")
+            return title
+        else:
+            log_message(f"OEmbed API 오류: {response.status_code}")
+            return f"Video_{video_id}"
+    except Exception as e:
+        log_message(f"비디오 정보 가져오기 오류: {str(e)}")
+        return f"Video_{video_id}"
 
 # 유튜브 자막 가져오기 함수
 def get_youtube_transcript(video_id):
     """유튜브 비디오 ID를 통해 자막을 가져옵니다."""
+    log_message(f"자막 가져오기 시작: {video_id}")
     try:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
         transcript_text = ' '.join([item['text'] for item in transcript_list])
+        log_message(f"자막 가져오기 성공: {len(transcript_text)} 글자")
         return transcript_text
     except yt_errors.NoTranscriptAvailable:
-        raise Exception("이 영상에는 자막이 제공되지 않습니다.")
+        log_message("자막이 제공되지 않는 비디오")
+        raise Exception("이 영상에는 자막이 제공되지 않습니다. 스크립트 직접 입력 방식을 이용해주세요.")
     except yt_errors.TranscriptsDisabled:
-        raise Exception("이 영상의 자막이 비활성화되어 있습니다.")
+        log_message("자막이 비활성화된 비디오")
+        raise Exception("이 영상의 자막이 비활성화되어 있습니다. 스크립트 직접 입력 방식을 이용해주세요.")
     except yt_errors.VideoUnavailable:
+        log_message("접근할 수 없는 비디오")
         raise Exception("유효하지 않거나 접근할 수 없는 영상입니다.")
     except Exception as e:
+        log_message(f"자막 가져오기 중 오류: {str(e)}")
         raise Exception(f"자막을 가져오는 중 오류가 발생했습니다: {str(e)}")
 
 # Gemini API를 사용하여 학습 노트 생성 함수
-def generate_notes_with_gemini(transcript_text):
+def generate_notes_with_gemini(transcript_text, learning_level='beginner'):
     """Gemini API를 사용하여 주어진 자막으로 학습 노트를 생성합니다."""
-    prompt = """# 유튜브 대본 티칭 머신
+    log_message("Gemini API 호출 시작")
+    
+    # 텍스트가 너무 길면 잘라내기 (API 한도 고려)
+    if len(transcript_text) > 30000:
+        transcript_text = transcript_text[:30000]
+        log_message("텍스트가 너무 길어 잘라냄")
+    
+    # 학습 레벨 설정
+    level_context = ""
+    if learning_level == 'advanced':
+        level_context = """
+이 학습 노트는 고급 학습자를 위해 작성됩니다. 다음 지침을 따라주세요:
+- 더 깊이 있는 개념 설명과 고급 이론을 포함해주세요
+- 실제 활용 사례와 응용 방법을 더 상세히 제시해주세요
+- 해당 분야의 전문 용어와 관련 학술적 개념을 적절히 포함해주세요
+- 자기 평가 질문은 비판적 사고와 분석적 능력을 측정할 수 있는 것으로 구성해주세요
+"""
+    else:  # beginner
+        level_context = """
+이 학습 노트는 초보 학습자를 위해 작성됩니다. 다음 지침을 따라주세요:
+- 기본 개념과 원리를 쉽게 이해할 수 있도록 설명해주세요
+- 복잡한 용어는 간단한 설명과 예시를 함께 제공해주세요
+- 실생활에서 쉽게 이해할 수 있는 예시를 포함해주세요
+- 자기 평가 질문은 기본 이해도를 측정할 수 있는 간단한 것으로 구성해주세요
+"""
+    
+    prompt = f"""# 유튜브 대본 티칭 머신
 
-## 역할: 적응형 교육 합성기  
+## 역할: 적응형 교육 합성기
 귀하는 YouTube 원본 스크립트를 최적화된 학습 자료로 변환하는 전문 교육 콘텐츠 처리 전문가입니다. 고급 교육 프레임워크를 활용합니다.
+
+{level_context}
 
 ## 역량  
 1.  **콘텐츠 분석 및 추출**  
@@ -138,15 +198,27 @@ def generate_notes_with_gemini(transcript_text):
 {transcript_text}
 ---
 
-위 스크립트(또는 스크립트 부재 정보)를 바탕으로, 앞서 정의된 "## 역할", "## 역량", "## 프로세스", "## 필사본 품질 처리"를 고려하여 "## 출력 구조"에 따라 교육적인 학습 노트를 Markdown 형식으로 작성해주십시오.""".format(transcript_text=transcript_text)
+위 스크립트(또는 스크립트 부재 정보)를 바탕으로, 앞서 정의된 "## 역할", "## 역량", "## 프로세스", "## 필사본 품질 처리"를 고려하여 "## 출력 구조"에 따라 교육적인 학습 노트를 Markdown 형식으로 작성해주십시오."""
 
     if not GEMINI_API_KEY:
+        log_message("API 키 없음")
         raise Exception("GEMINI_API_KEY가 설정되어 있지 않습니다. 환경 변수를 확인하세요.")
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        response = model.generate_content(prompt)
-        return response.text
+        # Gemini API 호출 시도
+        try:
+            log_message("Gemini Pro 모델 사용 시도")
+            model = genai.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
+            log_message("Gemini API 호출 성공")
+            return response.text
+        except Exception as api_error:
+            log_message(f"Gemini Pro 모델 오류: {str(api_error)}, 1.5 Flash 모델로 대체 시도")
+            # Pro 모델이 실패하면 1.5 모델로 시도
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            log_message("Gemini 1.5 Flash API 호출 성공")
+            return response.text
     except Exception as e:
         raise Exception(f"AI 모델 호출 중 오류가 발생했습니다: {str(e)}")
 
@@ -174,6 +246,7 @@ def generate_notes(path):
         
         input_type = data['inputType']
         input_value = data['inputValue']
+        learning_level = data.get('learningLevel', 'beginner')
         
         # 입력 타입에 따라 처리
         transcript_text = ""
@@ -195,7 +268,7 @@ def generate_notes(path):
             transcript_text = input_value
         
         # 학습 노트 생성
-        markdown_content = generate_notes_with_gemini(transcript_text)
+        markdown_content = generate_notes_with_gemini(transcript_text, learning_level)
         
         # 성공 응답
         response = jsonify({
@@ -211,10 +284,19 @@ def generate_notes(path):
         
     except Exception as e:
         # 오류 응답
-        response = jsonify({'error': str(e)})
+        response = jsonify({
+            'error': str(e),
+            'errorType': 'API_ERROR',
+            'recommendationText': '잠시 후 다시 시도하거나, 다른 유튜브 URL을 사용해보세요.',
+            'helpText': '자막이 없는 영상인 경우, 스크립트 직접 입력 방식을 이용해보세요.'
+        })
         
         # CORS 헤더 추가
         for key, value in headers.items():
             response.headers[key] = value
         
         return response, 400
+
+# 직접 실행 시
+if __name__ == '__main__':
+    app.run(debug=True) 
