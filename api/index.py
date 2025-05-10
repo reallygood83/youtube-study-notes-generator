@@ -9,6 +9,10 @@ import requests
 # 환경 변수에서 API 키 가져오기
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# Gemini API 설정
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
 # 디버깅을 위한 로그 함수
 def log_message(message):
     with open("/tmp/api_log.txt", "a") as f:
@@ -223,17 +227,17 @@ def generate_notes_with_gemini(transcript_text, video_info=None, learning_level=
         # API 키가 있을 때만 실제 Gemini API 호출
         if GEMINI_API_KEY:
             try:
-                log_message("Gemini 2.0 Flash 모델 사용 시도")
-                model = genai.GenerativeModel('gemini-2.0-flash')
+                log_message("Gemini Pro 모델 사용 시도")
+                model = genai.GenerativeModel('gemini-pro')
                 response = model.generate_content(prompt)
                 log_message("Gemini API 호출 성공")
                 return response.text
             except Exception as api_error:
-                log_message(f"Gemini 2.0 모델 오류: {str(api_error)}, 1.5 모델로 대체")
-                # 2.0 모델이 실패하면 1.5 모델로 시도
+                log_message(f"Gemini Pro 모델 오류: {str(api_error)}, 1.5 Flash 모델로 대체")
+                # Pro 모델이 실패하면 1.5 모델로 시도
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(prompt)
-                log_message("Gemini 1.5 API 호출 성공")
+                log_message("Gemini 1.5 Flash API 호출 성공")
                 return response.text
         else:
             # API 키가 없을 때는 간단한 노트 생성
