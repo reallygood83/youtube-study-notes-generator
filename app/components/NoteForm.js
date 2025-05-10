@@ -60,7 +60,7 @@ export default function NoteForm() {
       });
       
       // API 호출
-      const response = await axios.post('/api/generate_notes', {
+      const response = await axios.post('/api', {
         inputType,
         inputValue
       });
