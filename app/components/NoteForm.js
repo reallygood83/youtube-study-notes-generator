@@ -106,14 +106,20 @@ export default function NoteForm() {
       });
       
       // API 호출
-      const response = await axios.post('/api', {
+      const apiUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://youtube-note-lilac.vercel.app/api' 
+        : '/api';
+        
+      const response = await axios.post(apiUrl, {
         inputType,
         inputValue,
         learningLevel
       }, {
         headers: {
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 30000 // 30초 타임아웃
       });
       
       // 결과 처리
