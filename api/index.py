@@ -1,11 +1,8 @@
-from flask import Flask, request, jsonify, Response
 import json
 import os
 import re
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi, _errors as yt_errors
-
-app = Flask(__name__)
 
 # 환경 변수에서 API 키 가져오기
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -144,35 +141,56 @@ def generate_notes_with_gemini(transcript_text):
         raise Exception("GEMINI_API_KEY가 설정되어 있지 않습니다. 환경 변수를 확인하세요.")
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        # Gemini 2.0 Flash 모델 사용 (사용자 요청에 따라 변경)
+        model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         raise Exception(f"AI 모델 호출 중 오류가 발생했습니다: {str(e)}")
 
-@app.route('/', methods=['POST', 'OPTIONS'])
-def api_handler():
+# Vercel 서버리스 함수 핸들러
+def handler(request):
     # CORS 헤더 설정
     headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Content-Type": "application/json"
     }
     
+    # HTTP 메서드 확인
+    method = request.get("method", "")
+    
     # OPTIONS 요청 처리 (CORS 프리플라이트)
-    if request.method == 'OPTIONS':
-        return '', 200, headers
+    if method == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": headers,
+            "body": ""
+        }
+    
+    # POST 메서드가 아닌 경우
+    if method != "POST":
+        return {
+            "statusCode": 405,
+            "headers": headers,
+            "body": json.dumps({"error": "Method Not Allowed"})
+        }
     
     try:
-        # 요청 데이터 받기
-        data = request.json
+        # 요청 본문 파싱
+        body = json.loads(request.get("body", "{}"))
         
         # 요청 데이터 검증
-        if not data or 'inputType' not in data or 'inputValue' not in data:
-            return jsonify({'error': '유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다.'}), 400, headers
+        if not body or 'inputType' not in body or 'inputValue' not in body:
+            return {
+                "statusCode": 400,
+                "headers": headers,
+                "body": json.dumps({"error": "유효하지 않은 요청입니다. inputType과 inputValue가 필요합니다."})
+            }
         
-        input_type = data['inputType']
-        input_value = data['inputValue']
+        input_type = body['inputType']
+        input_value = body['inputValue']
         
         # 입력 타입에 따라 처리
         transcript_text = ""
@@ -182,7 +200,11 @@ def api_handler():
             # URL에서 비디오 ID 추출
             video_id = extract_video_id(input_value)
             if not video_id:
-                return jsonify({'error': '유효한 유튜브 URL이 아닙니다.'}), 400, headers
+                return {
+                    "statusCode": 400,
+                    "headers": headers,
+                    "body": json.dumps({"error": "유효한 유튜브 URL이 아닙니다."})
+                }
             
             # 비디오 제목 가져오기
             video_title = get_video_title(video_id)
@@ -197,45 +219,20 @@ def api_handler():
         markdown_content = generate_notes_with_gemini(transcript_text)
         
         # 성공 응답
-        response_data = {
-            'markdownContent': markdown_content,
-            'videoTitle': video_title
+        return {
+            "statusCode": 200,
+            "headers": headers,
+            "body": json.dumps({
+                "markdownContent": markdown_content,
+                "videoTitle": video_title
+            })
         }
-        
-        response = Response(
-            response=json.dumps(response_data),
-            status=200,
-            mimetype='application/json'
-        )
-        
-        # CORS 헤더 추가
-        for key, value in headers.items():
-            response.headers[key] = value
-        
-        return response
         
     except Exception as e:
         # 오류 응답
-        response_data = {
-            'error': str(e)
+        error_message = str(e)
+        return {
+            "statusCode": 400,
+            "headers": headers,
+            "body": json.dumps({"error": error_message})
         }
-        
-        response = Response(
-            response=json.dumps(response_data),
-            status=400,
-            mimetype='application/json'
-        )
-        
-        # CORS 헤더 추가
-        for key, value in headers.items():
-            response.headers[key] = value
-        
-        return response
-
-# Vercel 서버리스 함수 진입점
-def handler(req):
-    return app(req.environ, lambda status, headers, exc_info=None: [status, headers, []])
-
-# Flask 앱이 직접 실행될 때의 설정
-if __name__ == '__main__':
-    app.run(debug=True)
